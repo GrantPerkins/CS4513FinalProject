@@ -96,4 +96,5 @@ if __name__ == "__main__":
     train(dataset, model, loss, optimizer, epochs)
     # SMDataParallel: Save checkpoints only from master node.
     if dist.rank() == 0:
-        model.save("/opt/ml/model/1")
+        checkpoint_dir = "/opt/ml/model"
+        model.save(os.path.join(checkpoint_dir, '1'))
