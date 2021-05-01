@@ -80,13 +80,6 @@ def training_step(images, labels, first_batch):
     return loss_value
 
 
-def train(mnist_epochs):
-    for batch, (images, labels) in enumerate(dataset.take(mnist_epochs // dist.size())):
-        loss_value = training_step(images, labels, batch == 0)
-        if batch % 50 == 0 and dist.rank() == 0:
-            print('Step #%d\tLoss: %.6f' % (batch, loss_value))
-
-
 if __name__ == "__main__":
     dist.init()
     config_gpus()
@@ -94,7 +87,13 @@ if __name__ == "__main__":
     epochs, batch_size, learning_rate = get_hyperparameters()
     model, loss, optimizer = create_model(learning_rate)
     dataset = get_dataset(batch_size)
-    train(epochs)
+
+    # train
+    for batch, (images, labels) in enumerate(dataset.take(epochs // dist.size())):
+        batch_loss_value = training_step(images, labels, batch == 0)
+        if batch % 50 == 0 and dist.rank() == 0:
+            print('Step #%d\tLoss: %.6f' % (batch, batch_loss_value))
+
     # SMDataParallel: Save checkpoints only from master node.
     if dist.rank() == 0:
         checkpoint_dir = "/opt/ml/model"
