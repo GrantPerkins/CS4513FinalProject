@@ -54,11 +54,12 @@ def create_model(mnist_learning_rate):
     # LR for 8 node run : 0.000125
     # LR for single node run : 0.001
     mnist_optimizer = tf.optimizers.Adam(mnist_learning_rate * dist.size())
+    tf.train.Checkpoint(model=mnist_model, optimizer=optimizer)
     return mnist_model, mnist_loss, mnist_optimizer
 
 
 @tf.function
-def training_step(images, labels, first_batch, mnist_model, mnist_loss, mnist_optimizer):
+def training_step(images, labels, first_batch):
     with tf.GradientTape() as tape:
         probs = mnist_model(images, training=True)
         loss_value = mnist_loss(labels, probs)
@@ -66,22 +67,22 @@ def training_step(images, labels, first_batch, mnist_model, mnist_loss, mnist_op
     # SMDataParallel: Wrap tf.GradientTape with SMDataParallel's DistributedGradientTape
     tape = dist.DistributedGradientTape(tape)
 
-    grads = tape.gradient(loss_value, mnist_model.trainable_variables)
-    mnist_optimizer.apply_gradients(zip(grads, mnist_model.trainable_variables))
+    grads = tape.gradient(loss_value, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
     if first_batch:
         # SMDataParallel: Broadcast model and optimizer variables
-        dist.broadcast_variables(mnist_model.variables, root_rank=0)
-        dist.broadcast_variables(mnist_optimizer.variables(), root_rank=0)
+        dist.broadcast_variables(model.variables, root_rank=0)
+        dist.broadcast_variables(optimizer.variables(), root_rank=0)
 
     # SMDataParallel: all_reduce call
     loss_value = dist.oob_allreduce(loss_value)  # Average the loss across workers
     return loss_value
 
 
-def train(mnist_dataset, mnist_model, mnist_loss, mnist_optimizer, mnist_epochs):
-    for batch, (images, labels) in enumerate(mnist_dataset.take(mnist_epochs // dist.size())):
-        loss_value = training_step(images, labels, batch == 0, mnist_model, mnist_loss, mnist_optimizer)
+def train(mnist_epochs):
+    for batch, (images, labels) in enumerate(dataset.take(mnist_epochs // dist.size())):
+        loss_value = training_step(images, labels, batch == 0, model, loss, optimizer)
         if batch % 50 == 0 and dist.rank() == 0:
             print('Step #%d\tLoss: %.6f' % (batch, loss_value))
 
@@ -93,7 +94,7 @@ if __name__ == "__main__":
     epochs, batch_size, learning_rate = get_hyperparameters()
     model, loss, optimizer = create_model(learning_rate)
     dataset = get_dataset(batch_size)
-    train(dataset, model, loss, optimizer, epochs)
+    train(epochs)
     # SMDataParallel: Save checkpoints only from master node.
     if dist.rank() == 0:
         checkpoint_dir = "/opt/ml/model"
