@@ -61,8 +61,8 @@ def create_model(mnist_learning_rate):
 @tf.function
 def training_step(images, labels, first_batch):
     with tf.GradientTape() as tape:
-        probs = mnist_model(images, training=True)
-        loss_value = mnist_loss(labels, probs)
+        probs = model(images, training=True)
+        loss_value = loss(labels, probs)
 
     # SMDataParallel: Wrap tf.GradientTape with SMDataParallel's DistributedGradientTape
     tape = dist.DistributedGradientTape(tape)
@@ -82,7 +82,7 @@ def training_step(images, labels, first_batch):
 
 def train(mnist_epochs):
     for batch, (images, labels) in enumerate(dataset.take(mnist_epochs // dist.size())):
-        loss_value = training_step(images, labels, batch == 0, model, loss, optimizer)
+        loss_value = training_step(images, labels, batch == 0)
         if batch % 50 == 0 and dist.rank() == 0:
             print('Step #%d\tLoss: %.6f' % (batch, loss_value))
 
