@@ -33,7 +33,7 @@ def get_dataset(mnist_batch_size):
         (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
          tf.cast(mnist_labels, tf.int64))
     )
-    mnist_dataset = mnist_dataset.repeat().shuffle(100000000).batch(mnist_batch_size)
+    mnist_dataset = mnist_dataset.repeat().shuffle(100000).batch(mnist_batch_size)
     return mnist_dataset
 
 
@@ -54,8 +54,7 @@ def create_model(mnist_learning_rate):
     # LR for 8 node run : 0.000125
     # LR for single node run : 0.001
     mnist_optimizer = tf.optimizers.Adam(mnist_learning_rate * dist.size())
-    mnist_checkpoint = tf.train.Checkpoint(model=mnist_model, optimizer=mnist_optimizer)
-    return mnist_model, mnist_loss, mnist_optimizer, mnist_checkpoint
+    return mnist_model, mnist_loss, mnist_optimizer
 
 
 @tf.function
@@ -92,9 +91,9 @@ if __name__ == "__main__":
     config_gpus()
     print("Worker number:", dist.rank())
     epochs, batch_size, learning_rate = get_hyperparameters()
-    model, loss, optimizer, checkpoint = create_model(learning_rate)
+    model, loss, optimizer = create_model(learning_rate)
     dataset = get_dataset(batch_size)
     train(dataset, model, loss, optimizer, epochs)
     # SMDataParallel: Save checkpoints only from master node.
     if dist.rank() == 0:
-        checkpoint.save("/opt/ml/model/1")
+        model.save("/opt/ml/model/1")
