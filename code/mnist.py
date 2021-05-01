@@ -37,27 +37,6 @@ def get_dataset(mnist_batch_size):
     return mnist_dataset
 
 
-def create_model(mnist_learning_rate):
-    mnist_model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
-        tf.keras.layers.Conv2D(64, [3, 3], activation='relu'),
-        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-        tf.keras.layers.Dropout(0.25),
-        tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dropout(0.5),
-        tf.keras.layers.Dense(10, activation='softmax')
-    ])
-    mnist_loss = tf.losses.SparseCategoricalCrossentropy()
-
-    # SMDataParallel: dist.size()
-    # LR for 8 node run : 0.000125
-    # LR for single node run : 0.001
-    mnist_optimizer = tf.optimizers.Adam(mnist_learning_rate * dist.size())
-    tf.train.Checkpoint(model=mnist_model, optimizer=optimizer)
-    return mnist_model, mnist_loss, mnist_optimizer
-
-
 @tf.function
 def training_step(images, labels, first_batch):
     with tf.GradientTape() as tape:
@@ -80,21 +59,33 @@ def training_step(images, labels, first_batch):
     return loss_value
 
 
-if __name__ == "__main__":
-    dist.init()
-    config_gpus()
-    print("Worker number:", dist.rank())
-    epochs, batch_size, learning_rate = get_hyperparameters()
-    model, loss, optimizer = create_model(learning_rate)
-    dataset = get_dataset(batch_size)
+dist.init()
+config_gpus()
+print("Worker number:", dist.rank())
+epochs, batch_size, learning_rate = get_hyperparameters()
+    
+model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
+    tf.keras.layers.Conv2D(64, [3, 3], activation='relu'),
+    tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+    tf.keras.layers.Dropout(0.25),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.5),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+loss = tf.losses.SparseCategoricalCrossentropy()
+optimizer = tf.optimizers.Adam(learning_rate * dist.size())
+dataset = get_dataset(batch_size)
 
-    # train
-    for batch, (images, labels) in enumerate(dataset.take(epochs // dist.size())):
-        batch_loss_value = training_step(images, labels, batch == 0)
-        if batch % 50 == 0 and dist.rank() == 0:
-            print('Step #%d\tLoss: %.6f' % (batch, batch_loss_value))
+# train
+for batch, (images, labels) in enumerate(dataset.take(epochs // dist.size())):
+    batch_loss_value = training_step(images, labels, batch == 0)
+    if batch % 50 == 0 and dist.rank() == 0:
+        print('Step #%d\tLoss: %.6f' % (batch, batch_loss_value))
 
-    # SMDataParallel: Save checkpoints only from master node.
-    if dist.rank() == 0:
-        checkpoint_dir = "/opt/ml/model"
-        model.save(os.path.join(checkpoint_dir, '1'))
+# SMDataParallel: Save checkpoints only from master node.
+if dist.rank() == 0:
+    checkpoint_dir = "/opt/ml/model"
+    print("Saving to",checkpoint_dir)
+    model.save(os.path.join(checkpoint_dir, '1'))
