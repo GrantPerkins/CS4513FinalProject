@@ -5,36 +5,29 @@ from pathlib import Path
 import tensorflow as tf
 import smdistributed.dataparallel.tensorflow as dist
 
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
 
-def config_gpus():
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-
-    tf.config.experimental.set_visible_devices(gpus[dist.local_rank()], 'GPU')
+tf.config.experimental.set_visible_devices(gpus[dist.local_rank()], 'GPU')
 
 
-def get_hyperparameters():
-    with open("/opt/ml/input/config/hyperparameters.json", 'r') as f:
-        file = json.load(f)
-        mnist_epochs = int(file["epochs"])
-        mnist_batch_size = int(file["batch_size"])
-        mnist_learning_rate = float(file["learning_rate"])
-    return mnist_epochs, mnist_batch_size, mnist_learning_rate
+with open("/opt/ml/input/config/hyperparameters.json", 'r') as f:
+    file = json.load(f)
+    epochs = int(file["epochs"])
+    batch_size = int(file["batch_size"])
+    learning_rate = float(file["learning_rate"])
 
-
-def get_dataset(mnist_batch_size):
-    data_slice = 'mnist-%d.npz' % dist.rank()
-    keras_path = os.path.join(str(Path.home()), ".keras/datasets/")
-    os.makedirs(keras_path, exist_ok=True)
-    copyfile("/opt/ml/input/data/training/" + data_slice, keras_path + data_slice)
-    (mnist_images, mnist_labels), _ = tf.keras.datasets.mnist.load_data(path=data_slice)
-    mnist_dataset = tf.data.Dataset.from_tensor_slices(
-        (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
-         tf.cast(mnist_labels, tf.int64))
-    )
-    mnist_dataset = mnist_dataset.repeat().shuffle(100000).batch(mnist_batch_size)
-    return mnist_dataset
+data_slice = 'mnist-%d.npz' % dist.rank()
+keras_path = os.path.join(str(Path.home()), ".keras/datasets/")
+os.makedirs(keras_path, exist_ok=True)
+copyfile("/opt/ml/input/data/training/" + data_slice, keras_path + data_slice)
+(mnist_images, mnist_labels), _ = tf.keras.datasets.mnist.load_data(path=data_slice)
+mnist_dataset = tf.data.Dataset.from_tensor_slices(
+    (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
+     tf.cast(mnist_labels, tf.int64))
+)
+dataset = mnist_dataset.repeat().shuffle(100000).batch(batch_size)
 
 
 @tf.function
@@ -60,9 +53,8 @@ def training_step(images, labels, first_batch):
 
 
 dist.init()
-config_gpus()
 print("Worker number:", dist.rank())
-epochs, batch_size, learning_rate = get_hyperparameters()
+
     
 model = tf.keras.Sequential([
     tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
@@ -76,7 +68,7 @@ model = tf.keras.Sequential([
 ])
 loss = tf.losses.SparseCategoricalCrossentropy()
 optimizer = tf.optimizers.Adam(learning_rate * dist.size())
-dataset = get_dataset(batch_size)
+
 
 # train
 for batch, (images, labels) in enumerate(dataset.take(epochs // dist.size())):
