@@ -1,0 +1,8 @@
+This project exceeds expectations.
+
+I developed a fully-working distributed machine learning training solution for a custom convolutional neural network.
+The only reason why I didn't give myself "Exceptional" is because I could not figure out how to convince SageMaker to
+output my trained model. However, the metrics in the output show me that the CNN is learning, and a trained model is
+being saved. This project is very well documented and it works. This distributed system uses many computers for storing
+data, running the operation, and training the model. In my opinion, this is a fantastic final project and I had a lot of
+fun working on it.
